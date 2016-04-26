@@ -86,6 +86,10 @@ EOS
           foreign_key = association_details.foreign_key
           association_pk = association_klass.primary_key
 
+          if list.map{ |e| e[foreign_key.to_sym] }.compact.length == 0
+            return true
+          end
+
           query = <<-EOS
 SELECT
   distinct #{association_klass.table_name}.*
@@ -107,6 +111,54 @@ EOS
           list.each do |obj|
             if obj[foreign_key.to_sym].present? && association_map[obj[foreign_key.to_sym]].present?
               obj.instance_variable_set( "@_#{association}".to_sym, association_map[obj[foreign_key.to_sym]] )
+            end
+          end
+        when ActiveRecord::Reflection::HasAndBelongsToManyReflection
+          foreign_key = association_details.foreign_key
+          association_foreign_key = association_details.association_foreign_key
+          join_table = association_details.join_table
+
+          list.each do |obj|
+            instance_variable_name = "@_#{association}".to_sym
+            obj.instance_variable_set(instance_variable_name, [])
+          end
+
+          join_query = <<-EOS
+SELECT
+  #{join_table}.#{foreign_key},
+  #{join_table}.#{association_foreign_key}
+FROM #{join_table}
+WHERE #{join_table}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym].try(:to_s) }.compact.join(",") })
+
+EOS
+          join_entries = ActiveRecord::Base.connection.execute(join_query).to_a
+
+          query = <<-EOS
+SELECT
+  distinct #{association_klass.table_name}.*
+FROM #{association_klass.table_name}
+INNER JOIN #{join_table} ON #{join_table}.#{association_foreign_key} = #{association_klass.table_name}.#{association_klass.primary_key}
+WHERE #{join_table}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym].try(:to_s) }.compact.join(",") })
+
+EOS
+
+          association_list = association_klass.find_by_sql(query).to_a
+
+          if inner_associations.is_a?(Array)
+            association_list.preload(*inner_associations)
+          else
+            association_list.preload(inner_associations)
+          end
+
+          list.each do |obj|
+            instance_variable_name = "@_#{association}".to_sym
+
+            association_key_list = join_entries.select{ |e| e[0] == obj[klass.primary_key.to_s] }.map(&:last)
+
+            association_list.select{ |e| association_key_list.include?( e[association_klass.primary_key.to_s] ) }.each do |association_obj|
+              each_list = obj.instance_variable_get(instance_variable_name)
+              each_list << association_obj
+              obj.instance_variable_set(instance_variable_name, each_list)
             end
           end
         else
