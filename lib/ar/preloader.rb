@@ -5,168 +5,115 @@ module Ar
     class Error < RuntimeError
     end
 
-    def self.check_association_exists(klass, association)
-      case association
-      when String, Symbol
-        return klass.reflections.keys.include?(association.to_s)
-      when Array
-        association.each do |v|
-          return false unless Ar::Preloader.check_association_exists(klass, v)
-        end
-      when Hash
-        association.each_pair do |k,v|
-          return false unless klass.reflections.keys.include?(k.to_s)
+    def self.preload_habtm(list:, name:, association_klass:, foreign_key:, association_foreign_key:, inner_associations:, join_table:, association_condition:)
+      klass = list.first.class
+      klass.send :attr_reader, "_#{name}".to_sym
 
-          associated_klass = klass.reflections[k.to_s].class_name.constantize
+      join_query = <<-EOS
 
-          case v
-          when String, Symbol, Hash
-            return false unless Ar::Preloader.check_association_exists(associated_klass, v)
-          when Array
-            v.each do |each_v|
-              return false unless Ar::Preloader.check_association_exists(associated_klass, each_v)
-            end
-          else
+      SELECT
+        #{join_table}.#{foreign_key},
+        #{join_table}.#{association_foreign_key}
+      FROM #{join_table}
+      WHERE #{join_table}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })
+
+      EOS
+
+      join_objects = ActiveRecord::Base.connection.execute(join_query).to_a
+
+      query = <<-EOS
+
+      SELECT
+        #{association_klass.table_name}.*
+      FROM #{association_klass.table_name}
+      INNER JOIN #{join_table} ON #{join_table}.#{association_foreign_key} = #{association_klass.table_name}.#{association_klass.primary_key}
+      WHERE #{join_table}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })#{ association_condition.present? ? " AND #{association_condition}" : "" }
+
+      EOS
+
+      associated_objects = association_klass.find_by_sql(query).to_a
+
+      if inner_associations.present?
+        associated_objects.prefetch(inner_associations)
+      end
+
+      associated_objects_hash = associated_objects.map{ |e| [e[klass.primary_key.to_sym], e] }.to_h
+
+      list.each do |ele|
+        set = []
+
+        join_objects.select{ |e| e[0] == ele[klass.primary_key.to_sym] }.map(&:last).each do |association_pk|
+          if associated_objects_hash[association_pk].present?
+            set << associated_objects_hash[association_pk]
           end
         end
 
-        return true
-      else
-        return false
+        ele.instance_variable_set(:"@_#{name}", set)
       end
     end
 
-    def self.preload_association(list, association, inner_associations = [])
-      return if list.length == 0
+    def self.preload_has_many(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil)
+      klass = list.first.class
+      klass.send :attr_reader, "_#{name}".to_sym
 
-      case association
-      when String, Symbol
-        klass = list.first.class
-        klass.send :attr_reader, "_#{association}".to_sym
+      return if list.map{ |e| e[foreign_key.to_sym] }.compact.length == 0
 
-        association_details = klass.reflections[association.to_s]
-        association_klass = association_details.class_name.constantize
+      query = <<-EOS.squish
 
-        case association_details
-        when ActiveRecord::Reflection::HasManyReflection
-          foreign_key = association_details.foreign_key
-          association_pk = association_klass.primary_key
+      SELECT
+        #{association_klass.table_name}.*
+      FROM #{association_klass.table_name}
+      WHERE #{association_klass.table_name}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })#{ association_condition.present? ? "AND #{association_condition}" : ""}
 
-          list.each do |obj|
-            instance_variable_name = "@_#{association}".to_sym
-            obj.instance_variable_set(instance_variable_name, [])
-          end
+      EOS
 
-          query = <<-EOS
-SELECT
-  distinct #{association_klass.table_name}.*
-FROM #{association_klass.table_name}
-WHERE #{association_klass.table_name}.#{foreign_key} in (#{ list.map{ |e| e[klass.primary_key.to_sym].try(:to_s) }.compact.join(",") })
+      associated_objects = klass.find_by_sql(query).to_a
+      if inner_associations.present?
+        associated_objects.prefetch(inner_associations)
+      end
 
-EOS
+      associated_objects_hash = {}
+      associated_objects.each do |ao|
+        associated_objects_hash[ao[klass.primary_key.to_sym]] ||= []
+        associated_objects_hash[ao[klass.primary_key.to_sym]] << ao
+      end
 
-          association_list = association_klass.find_by_sql(query).to_a
+      list.each do |ele|
+        set = []
 
-          if inner_associations.is_a?(Array)
-            association_list.preload(*inner_associations)
-          else
-            association_list.preload(inner_associations)
-          end
-
-          list.each do |obj|
-            instance_variable_name = "@_#{association}".to_sym
-
-            association_list.select{ |e| e[foreign_key.to_sym] == obj[klass.primary_key.to_sym] }.each do |association_obj|
-              each_list = obj.instance_variable_get(instance_variable_name)
-              each_list << association_obj
-              obj.instance_variable_set(instance_variable_name, each_list)
-            end
-          end
-        when ActiveRecord::Reflection::BelongsToReflection
-          foreign_key = association_details.foreign_key
-          association_pk = association_klass.primary_key
-
-          if list.map{ |e| e[foreign_key.to_sym] }.compact.length == 0
-            return true
-          end
-
-          query = <<-EOS
-SELECT
-  distinct #{association_klass.table_name}.*
-FROM #{association_klass.table_name}
-WHERE #{association_klass.table_name}.#{association_klass.primary_key} in (#{ list.map{ |e| e[foreign_key.to_sym].try(:to_s) }.compact.join(",") })
-
-EOS
-
-          association_list = association_klass.find_by_sql(query).to_a
-
-          if inner_associations.is_a?(Array)
-            association_list.preload(*inner_associations)
-          else
-            association_list.preload(inner_associations)
-          end
-
-          association_map = association_list.map{ |e| [e[e.class.primary_key.to_sym], e] }.to_h
-
-          list.each do |obj|
-            if obj[foreign_key.to_sym].present? && association_map[obj[foreign_key.to_sym]].present?
-              obj.instance_variable_set( "@_#{association}".to_sym, association_map[obj[foreign_key.to_sym]] )
-            end
-          end
-        when ActiveRecord::Reflection::HasAndBelongsToManyReflection
-          foreign_key = association_details.foreign_key
-          association_foreign_key = association_details.association_foreign_key
-          join_table = association_details.join_table
-
-          list.each do |obj|
-            instance_variable_name = "@_#{association}".to_sym
-            obj.instance_variable_set(instance_variable_name, [])
-          end
-
-          join_query = <<-EOS
-SELECT
-  #{join_table}.#{foreign_key},
-  #{join_table}.#{association_foreign_key}
-FROM #{join_table}
-WHERE #{join_table}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym].try(:to_s) }.compact.join(",") })
-
-EOS
-          join_entries = ActiveRecord::Base.connection.execute(join_query).to_a
-
-          query = <<-EOS
-SELECT
-  distinct #{association_klass.table_name}.*
-FROM #{association_klass.table_name}
-INNER JOIN #{join_table} ON #{join_table}.#{association_foreign_key} = #{association_klass.table_name}.#{association_klass.primary_key}
-WHERE #{join_table}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym].try(:to_s) }.compact.join(",") })
-
-EOS
-
-          association_list = association_klass.find_by_sql(query).to_a
-
-          if inner_associations.is_a?(Array)
-            association_list.preload(*inner_associations)
-          else
-            association_list.preload(inner_associations)
-          end
-
-          list.each do |obj|
-            instance_variable_name = "@_#{association}".to_sym
-
-            association_key_list = join_entries.select{ |e| e[0] == obj[klass.primary_key.to_s] }.map(&:last)
-
-            association_list.select{ |e| association_key_list.include?( e[association_klass.primary_key.to_s] ) }.each do |association_obj|
-              each_list = obj.instance_variable_get(instance_variable_name)
-              each_list << association_obj
-              obj.instance_variable_set(instance_variable_name, each_list)
-            end
-          end
-        else
-          raise Ar::Preloader::Error.new("Unsupported association type: '#{association}'")
+        if associated_objects_hash[ele[foreign_key.to_sym]].present?
+          set = associated_objects_hash[ele[foreign_key.to_sym]]
         end
-      when Hash
-        association.each_pair do |k,v|
-          Ar::Preloader.preload_association(list, k, v)
+
+        ele.instance_variable_set(:"@_#{name}", set)
+      end
+    end
+
+    def self.preload_belongs_to(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil)
+      klass = list.first.class
+      klass.send :attr_reader, "_#{name}".to_sym
+
+      return if list.map{ |e| e[foreign_key.to_sym] }.compact.length == 0
+
+      query = <<-EOS.squish
+
+      SELECT
+        #{association_klass.table_name}.*
+      FROM #{association_klass.table_name}
+      WHERE #{association_klass.table_name}.#{association_klass.primary_key} IN (#{ list.map{ |e| e[foreign_key.to_sym] }.compact.map(&:to_s).join(", ") })#{ association_condition.present? ? "AND #{association_condition}" : ""}
+
+      EOS
+
+      associated_objects = association_klass.find_by_sql(query).to_a
+      if inner_associations.present?
+        associated_objects.prefetch(inner_associations)
+      end
+
+      associated_objects_hash = associated_objects.map{ |e| [e[association_klass.primary_key.to_sym], e] }.to_h
+
+      list.each do |ele|
+        if associated_objects_hash[ele[foreign_key.to_sym]].present?
+          ele.instance_variable_set(:"@_#{name}", associated_objects_hash[ele[foreign_key.to_sym]])
         end
       end
     end
@@ -174,21 +121,48 @@ EOS
 end
 
 class Array
-  def preload(*args)
-    return if args.length == 0
+  def prefetch(args)
+    return if args.keys.length == 0
 
-    raise Ar::Preloader::Error.new("Cannot preload. Mixed type lists are not supported.") if (self.map(&:class).uniq.count > 1)
-    raise Ar::Preloader::Error.new("Cannot preload. At least one element in array is not an ActiveRecord object.") if (self.reject{|e| e.is_a?(ActiveRecord::Base) }.count > 0)
+    args.each_pair do |name, details|
+      raise Ar::Preloader::Error.new("Incomplete relation details for '#{name}'") unless \
+        details.is_a?(Hash) \
+        && details[:klass].present?  \
+        && details[:klass].ancestors.include?(ActiveRecord::Base)  \
+        && details[:type].present? \
+        && details[:foreign_key].present? 
 
-
-    args.each do |arg|
-      raise Ar::Preloader::Error.new("Cannot find association '#{arg}' on one or more of the ActiveRecord objects.") if (self.reject{|e| Ar::Preloader.check_association_exists(e.class, arg) }.count > 0)
+      case details[:type].to_sym
+      when :belongs_to
+        Ar::Preloader.preload_belongs_to(
+          list:                     self,
+          name:                     name,
+          association_klass:        details[:klass],
+          foreign_key:              details[:foreign_key],
+          inner_associations:       details[:associations],
+          association_condition:    details[:association_condition]
+        )
+      when :has_many,
+        Ar::Preloader.preload_has_many(
+          list:                     self,
+          name:                     name,
+          association_klass:        details[:klass],
+          foreign_key:              details[:foreign_key],
+          inner_associations:       details[:associations],
+          association_condition:    details[:association_condition]
+      )
+      when :has_and_belongs_to_many
+        Ar::Preloader.preload_habtm(
+          list:                     self,
+          name:                     name,
+          association_klass:        details[:klass],
+          foreign_key:              details[:foreign_key],
+          association_foreign_key:  details[:association_foreign_key],
+          inner_associations:       details[:associations],
+          join_table:               details[:join_table],
+          association_condition:    details[:association_condition]
+        )
+      end
     end
-
-    args.each do |arg|
-     Ar::Preloader.preload_association(self, arg) 
-    end
-
-    true
   end
 end
