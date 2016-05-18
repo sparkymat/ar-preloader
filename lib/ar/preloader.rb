@@ -89,9 +89,13 @@ module Ar
       end
     end
 
-    def self.preload_has_one(list:, name:, association_klass:, foreign_key:, order_type:, order_field:, inner_associations: nil, association_condition: nil)
+    def self.preload_has_one(list:, name:, association_klass:, foreign_key:, order_type:, order_field:, inner_associations: nil, association_condition: nil, reverse_association: nil)
       klass = list.first.class
       klass.send :attr_reader, "_#{name}".to_sym
+
+      if reverse_association.present?
+        association_klass.send :attr_reader, "_#{reverse_association}".to_sym
+      end
 
       query = <<-EOS.squish
 
@@ -106,7 +110,7 @@ module Ar
       WHERE #{ association_klass.table_name }.#{ foreign_key } IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })
         #{ association_condition.present? ? " AND #{ association_condition }" : "" }
 
-      eos
+      EOS
 
       associated_objects = association_klass.find_by_sql(query).to_a
       if inner_associations.present?
@@ -117,7 +121,11 @@ module Ar
 
       list.each do |ele|
         if associated_objects_hash[ele[klass.primary_key.to_sym]].present?
-          ele.instance_variable_set(:"@_#{name}", associated_objects_hash[ele[klass.primary_key.to_sym]])
+          associated_object = associated_objects_hash[ele[klass.primary_key.to_sym]]
+          if reverse_association.present?
+            associated_object.instance_variable_set(:"@_#{reverse_association}", ele)
+          end
+          ele.instance_variable_set(:"@_#{name}", associated_object)
         end
       end
     end
@@ -184,7 +192,8 @@ class Array
           order_type:               details[:order_type],
           order_field:              details[:order_field],
           inner_associations:       details[:associations],
-          association_condition:    details[:association_condition]
+          association_condition:    details[:association_condition],
+          reverse_association:      details[:reverse_association]
         )
       when :has_many,
         Ar::Preloader.preload_has_many(
