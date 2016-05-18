@@ -89,18 +89,24 @@ module Ar
       end
     end
 
-    def self.preload_has_one(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil)
+    def self.preload_has_one(list:, name:, association_klass:, foreign_key:, order_type:, order_field:, inner_associations: nil, association_condition: nil)
       klass = list.first.class
       klass.send :attr_reader, "_#{name}".to_sym
 
       query = <<-EOS.squish
 
       SELECT
-        #{association_klass.table_name}.*
-      FROM #{association_klass.table_name}
-      WHERE #{association_klass.table_name}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })#{ association_condition.present? ? "AND #{association_condition}" : ""}
+        #{ association_klass.table_name }.*
+      FROM #{ association_klass.table_name }
+      INNER JOIN (
+        SELECT #{ association_klass.table_name }.#{ foreign_key }, #{ order_type }(#{ association_klass.table_name }.#{ order_field }) max_#{ order_field }
+        FROM #{ association_klass.table_name }
+        GROUP BY #{ association_klass.table_name }.#{ foreign_key }
+      ) _association ON _association.#{ foreign_key } = #{ association_klass.table_name }.#{ foreign_key } AND _association.max_#{ order_field } = #{ association_klass.table_name }.#{ order_field }
+      WHERE #{ association_klass.table_name }.#{ foreign_key } IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })
+        #{ association_condition.present? ? " AND #{ association_condition }" : "" }
 
-      EOS
+      eos
 
       associated_objects = association_klass.find_by_sql(query).to_a
       if inner_associations.present?
@@ -175,6 +181,8 @@ class Array
           name:                     name,
           association_klass:        details[:klass],
           foreign_key:              details[:foreign_key],
+          order_type:               details[:order_type],
+          order_field:              details[:order_field],
           inner_associations:       details[:associations],
           association_condition:    details[:association_condition]
         )
