@@ -89,6 +89,33 @@ module Ar
       end
     end
 
+    def self.preload_has_one(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil)
+      klass = list.first.class
+      klass.send :attr_reader, "_#{name}".to_sym
+
+      query = <<-EOS.squish
+
+      SELECT
+        #{association_klass.table_name}.*
+      FROM #{association_klass.table_name}
+      WHERE #{association_klass.table_name}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })#{ association_condition.present? ? "AND #{association_condition}" : ""}
+
+      EOS
+
+      associated_objects = association_klass.find_by_sql(query).to_a
+      if inner_associations.present?
+        associated_objects.prefetch(inner_associations)
+      end
+
+      associated_objects_hash = associated_objects.map{ |e| [e[foreign_key.to_sym], e] }.to_h
+
+      list.each do |ele|
+        if associated_objects_hash[ele[klass.primary_key.to_sym]].present?
+          ele.instance_variable_set(:"@_#{name}", associated_objects_hash[ele[klass.primary_key.to_sym]])
+        end
+      end
+    end
+
     def self.preload_belongs_to(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil)
       klass = list.first.class
       klass.send :attr_reader, "_#{name}".to_sym
@@ -135,6 +162,15 @@ class Array
       case details[:type].to_sym
       when :belongs_to
         Ar::Preloader.preload_belongs_to(
+          list:                     self,
+          name:                     name,
+          association_klass:        details[:klass],
+          foreign_key:              details[:foreign_key],
+          inner_associations:       details[:associations],
+          association_condition:    details[:association_condition]
+        )
+      when :has_one
+        Ar::Preloader.preload_has_one(
           list:                     self,
           name:                     name,
           association_klass:        details[:klass],
