@@ -158,6 +158,24 @@ module Ar
         end
       end
     end
+
+    def self.preload_polymorphic_belongs_to(list:, name:, polymorphic_key_field:, polymorphic_type_field:, polymorphic_type_map:)
+      return if polymorphic_key_field.nil? || polymorphic_type_field.nil? || polymorphic_type_map.nil? || (polymorphic_type_map.keys.length == 0)
+
+      klass = list.first.class
+      klass.send :attr_reader, "_#{name}".to_sym
+
+      polymorphic_type_map.keys.each do |polymorphic_type|
+        matching_list = list.select{ |e| e[polymorphic_type_field.to_sym] == polymorphic_type }
+        association_klass = polymorphic_type_map[polymorphic_type]
+        Ar::Preloader.preload_belongs_to(
+          list:              matching_list,
+          name:              name,
+          association_klass: association_klass,
+          foreign_key:       polymorphic_key_field
+        )
+      end
+    end
   end
 end
 
@@ -168,10 +186,7 @@ class Array
     args.each_pair do |name, details|
       raise Ar::Preloader::Error.new("Incomplete relation details for '#{name}'") unless \
         details.is_a?(Hash) \
-        && details[:klass].present?  \
-        && details[:klass].ancestors.include?(ActiveRecord::Base)  \
-        && details[:type].present? \
-        && details[:foreign_key].present? 
+        && details[:type].present?
 
       case details[:type].to_sym
       when :belongs_to
@@ -182,6 +197,14 @@ class Array
           foreign_key:              details[:foreign_key],
           inner_associations:       details[:associations],
           association_condition:    details[:association_condition]
+        )
+      when :polymorphic_belongs_to
+        Ar::Preloader.preload_polymorphic_belongs_to(
+          list:                     self,
+          name:                     name,
+          polymorphic_key_field:    details[:polymorphic_key_field],
+          polymorphic_type_field:   details[:polymorphic_type_field],
+          polymorphic_type_map:     details[:polymorphic_type_map]
         )
       when :has_one
         Ar::Preloader.preload_has_one(
