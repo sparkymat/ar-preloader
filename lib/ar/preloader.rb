@@ -37,7 +37,9 @@ module Ar
         associated_objects.prefetch(inner_associations)
       end
 
-      associated_objects_hash = associated_objects.map{ |e| [e[klass.primary_key.to_sym], e] }.to_h
+      associated_objects_hash = {}
+
+      associated_objects_hash = associated_objects.map{ |e| [e[association_klass.primary_key.to_sym], e] }.to_h
 
       list.each do |ele|
         set = []
