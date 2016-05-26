@@ -58,8 +58,6 @@ module Ar
       klass = list.first.class
       klass.send :attr_reader, "_#{name}".to_sym
 
-      return if list.map{ |e| e[foreign_key.to_sym] }.compact.length == 0
-
       query = <<-EOS.squish
 
       SELECT
@@ -69,22 +67,22 @@ module Ar
 
       EOS
 
-      associated_objects = klass.find_by_sql(query).to_a
+      associated_objects = association_klass.find_by_sql(query).to_a
       if inner_associations.present?
         associated_objects.prefetch(inner_associations)
       end
 
       associated_objects_hash = {}
       associated_objects.each do |ao|
-        associated_objects_hash[ao[klass.primary_key.to_sym]] ||= []
-        associated_objects_hash[ao[klass.primary_key.to_sym]] << ao
+        associated_objects_hash[ao[foreign_key.to_sym]] ||= []
+        associated_objects_hash[ao[foreign_key.to_sym]] << ao
       end
 
       list.each do |ele|
         set = []
 
-        if associated_objects_hash[ele[foreign_key.to_sym]].present?
-          set = associated_objects_hash[ele[foreign_key.to_sym]]
+        if associated_objects_hash[ele[klass.primary_key.to_sym]].present?
+          set = associated_objects_hash[ele[klass.primary_key.to_sym]]
         end
 
         ele.instance_variable_set(:"@_#{name}", set)
@@ -220,7 +218,7 @@ class Array
           association_condition:    details[:association_condition],
           reverse_association:      details[:reverse_association]
         )
-      when :has_many,
+      when :has_many
         Ar::Preloader.preload_has_many(
           list:                     self,
           name:                     name,
