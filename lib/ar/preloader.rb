@@ -111,6 +111,7 @@ module Ar
       INNER JOIN (
         SELECT #{ association_klass.table_name }.#{ foreign_key }, #{ order_type }(#{ association_klass.table_name }.#{ order_field }) max_#{ order_field }
         FROM #{ association_klass.table_name }
+        WHERE #{ association_klass.table_name }.#{ foreign_key } IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })
         GROUP BY #{ association_klass.table_name }.#{ foreign_key }
       ) _association ON _association.#{ foreign_key } = #{ association_klass.table_name }.#{ foreign_key } AND _association.max_#{ order_field } = #{ association_klass.table_name }.#{ order_field }
       WHERE #{ association_klass.table_name }.#{ foreign_key } IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })
