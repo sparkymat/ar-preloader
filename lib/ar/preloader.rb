@@ -56,11 +56,15 @@ module Ar
       end
     end
 
-    def self.preload_has_many(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil)
+    def self.preload_has_many(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil, reverse_association: nil)
       return if list.nil? || list.length == 0
 
       klass = list.first.class
       klass.send :attr_reader, "_#{name}".to_sym
+
+      if reverse_association.present?
+        association_klass.send :attr_reader, "_#{reverse_association}".to_sym
+      end
 
       query = <<-EOS.squish
 
@@ -87,6 +91,10 @@ module Ar
 
         if associated_objects_hash[ele[klass.primary_key.to_sym]].present?
           set = associated_objects_hash[ele[klass.primary_key.to_sym]]
+        end
+
+        set.each do |ao|
+          ao.instance_variable_set(:"@_#{reverse_association}", ele)
         end
 
         ele.instance_variable_set(:"@_#{name}", set)
@@ -236,7 +244,8 @@ class Array
           association_klass:        details[:klass],
           foreign_key:              details[:foreign_key],
           inner_associations:       details[:associations],
-          association_condition:    details[:association_condition]
+          association_condition:    details[:association_condition],
+          reverse_association:      details[:reverse_association]
       )
       when :has_and_belongs_to_many
         Ar::Preloader.preload_habtm(
