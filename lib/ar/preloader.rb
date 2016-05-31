@@ -6,6 +6,8 @@ module Ar
     end
 
     def self.preload_habtm(list:, name:, association_klass:, foreign_key:, association_foreign_key:, inner_associations:, join_table:, association_condition:)
+      return if list.nil? || list.length == 0
+
       klass = list.first.class
       klass.send :attr_reader, "_#{name}".to_sym
 
@@ -55,6 +57,8 @@ module Ar
     end
 
     def self.preload_has_many(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil)
+      return if list.nil? || list.length == 0
+
       klass = list.first.class
       klass.send :attr_reader, "_#{name}".to_sym
 
@@ -90,6 +94,8 @@ module Ar
     end
 
     def self.preload_has_one(list:, name:, association_klass:, foreign_key:, order_type:, order_field:, inner_associations: nil, association_condition: nil, reverse_association: nil)
+      return if list.nil? || list.length == 0
+
       klass = list.first.class
       klass.send :attr_reader, "_#{name}".to_sym
 
@@ -131,6 +137,8 @@ module Ar
     end
 
     def self.preload_belongs_to(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil)
+      return if list.nil? || list.length == 0
+
       klass = list.first.class
       klass.send :attr_reader, "_#{name}".to_sym
 
@@ -160,6 +168,8 @@ module Ar
     end
 
     def self.preload_polymorphic_belongs_to(list:, name:, polymorphic_key_field:, polymorphic_type_field:, polymorphic_type_map:)
+      return if list.nil? || list.length == 0
+
       return if polymorphic_key_field.nil? || polymorphic_type_field.nil? || polymorphic_type_map.nil? || (polymorphic_type_map.keys.length == 0)
 
       klass = list.first.class
