@@ -208,8 +208,8 @@ class Array
         details.is_a?(Hash) \
         && details[:type].present?
 
-      case details[:type].to_sym
-      when :belongs_to
+      case details[:type]
+      when :belongs_to, "belongs_to"
         Ar::Preloader.preload_belongs_to(
           list:                     self,
           name:                     name,
@@ -218,7 +218,7 @@ class Array
           inner_associations:       details[:associations],
           association_condition:    details[:association_condition]
         )
-      when :polymorphic_belongs_to
+      when :polymorphic_belongs_to, "polymorphic_belongs_to"
         Ar::Preloader.preload_polymorphic_belongs_to(
           list:                     self,
           name:                     name,
@@ -226,7 +226,7 @@ class Array
           polymorphic_type_field:   details[:polymorphic_type_field],
           polymorphic_type_map:     details[:polymorphic_type_map]
         )
-      when :has_one
+      when :has_one, "has_one"
         Ar::Preloader.preload_has_one(
           list:                     self,
           name:                     name,
@@ -238,7 +238,7 @@ class Array
           association_condition:    details[:association_condition],
           reverse_association:      details[:reverse_association]
         )
-      when :has_many
+      when :has_many, "has_many"
         Ar::Preloader.preload_has_many(
           list:                     self,
           name:                     name,
@@ -248,7 +248,7 @@ class Array
           association_condition:    details[:association_condition],
           reverse_association:      details[:reverse_association]
       )
-      when :has_and_belongs_to_many
+      when :has_and_belongs_to_many, "has_and_belongs_to_many"
         Ar::Preloader.preload_habtm(
           list:                     self,
           name:                     name,
