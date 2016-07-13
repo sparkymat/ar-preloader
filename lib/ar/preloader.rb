@@ -9,7 +9,7 @@ module Ar
       return if list.nil? || list.length == 0
 
       klass = list.first.class
-      klass.send :attr_reader, "_#{name}".to_sym
+      klass.send :attr_reader, name.to_sym
 
       join_query = <<-EOS
 
@@ -52,7 +52,7 @@ module Ar
           end
         end
 
-        ele.instance_variable_set(:"@_#{name}", set)
+        ele.instance_variable_set(:"@#{name}", set)
       end
     end
 
@@ -60,10 +60,10 @@ module Ar
       return if list.nil? || list.length == 0
 
       klass = list.first.class
-      klass.send :attr_reader, "_#{name}".to_sym
+      klass.send :attr_reader, name.to_sym
 
       if reverse_association.present?
-        association_klass.send :attr_reader, "_#{reverse_association}".to_sym
+        association_klass.send :attr_reader, reverse_association.to_sym
       end
 
       query = <<-EOS.squish
@@ -94,10 +94,10 @@ module Ar
         end
 
         set.each do |ao|
-          ao.instance_variable_set(:"@_#{reverse_association}", ele)
+          ao.instance_variable_set(:"@#{reverse_association}", ele)
         end
 
-        ele.instance_variable_set(:"@_#{name}", set)
+        ele.instance_variable_set(:"@#{name}", set)
       end
     end
 
@@ -105,10 +105,10 @@ module Ar
       return if list.nil? || list.length == 0
 
       klass = list.first.class
-      klass.send :attr_reader, "_#{name}".to_sym
+      klass.send :attr_reader, name.to_sym
 
       if reverse_association.present?
-        association_klass.send :attr_reader, "_#{reverse_association}".to_sym
+        association_klass.send :attr_reader, reverse_association.to_sym
       end
 
       query = <<-EOS.squish
@@ -139,9 +139,9 @@ module Ar
         if associated_objects_hash[ele[klass.primary_key.to_sym]].present?
           associated_object = associated_objects_hash[ele[klass.primary_key.to_sym]]
           if reverse_association.present?
-            associated_object.instance_variable_set(:"@_#{reverse_association}", ele)
+            associated_object.instance_variable_set(:"@#{reverse_association}", ele)
           end
-          ele.instance_variable_set(:"@_#{name}", associated_object)
+          ele.instance_variable_set(:"@#{name}", associated_object)
         end
       end
     end
@@ -150,7 +150,7 @@ module Ar
       return if list.nil? || list.length == 0
 
       klass = list.first.class
-      klass.send :attr_reader, "_#{name}".to_sym
+      klass.send :attr_reader, name.to_sym
 
       return if list.map{ |e| e[foreign_key.to_sym] }.compact.length == 0
 
@@ -172,7 +172,7 @@ module Ar
 
       list.each do |ele|
         if associated_objects_hash[ele[foreign_key.to_sym]].present?
-          ele.instance_variable_set(:"@_#{name}", associated_objects_hash[ele[foreign_key.to_sym]])
+          ele.instance_variable_set(:"@#{name}", associated_objects_hash[ele[foreign_key.to_sym]])
         end
       end
     end
@@ -183,7 +183,7 @@ module Ar
       return if polymorphic_key_field.nil? || polymorphic_type_field.nil? || polymorphic_type_map.nil? || (polymorphic_type_map.keys.length == 0)
 
       klass = list.first.class
-      klass.send :attr_reader, "_#{name}".to_sym
+      klass.send :attr_reader, name.to_sym
 
       polymorphic_type_map.keys.each do |polymorphic_type|
         matching_list = list.select{ |e| e[polymorphic_type_field.to_sym] == polymorphic_type }
