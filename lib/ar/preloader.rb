@@ -93,8 +93,10 @@ module Ar
           set = associated_objects_hash[ele[klass.primary_key.to_sym]]
         end
 
-        set.each do |ao|
-          ao.instance_variable_set(:"@#{reverse_association}", ele)
+        if reverse_association.present?
+          set.each do |ao|
+            ao.instance_variable_set(:"@#{reverse_association}", ele)
+          end
         end
 
         ele.instance_variable_set(:"@#{name}", set)
