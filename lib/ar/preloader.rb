@@ -1,9 +1,12 @@
 require "ar/preloader/version"
+require "rusql"
 
 module Ar
   module Preloader
     class Error < RuntimeError
     end
+
+    extend Rusql
 
     def self.preload_habtm(list:, name:, association_klass:, foreign_key:, association_foreign_key:, inner_associations:, join_table:, association_condition:)
       return if list.nil? || list.length == 0
@@ -171,6 +174,9 @@ module Ar
         from( association_table ).
         where( condition )
 
+      additional_joins.each do |j|
+        query = query.join(j)
+      end
 
       associated_objects = association_klass.find_by_sql(query.to_s).to_a
       if inner_associations.present?
@@ -225,8 +231,8 @@ class Array
           association_klass:        details[:klass],
           foreign_key:              details[:foreign_key],
           inner_associations:       details[:associations],
-          additional_selects:       details[:additional_selects],
-          additional_joins:         details[:additional_joins],
+          additional_selects:       details[:additional_selects] || [],
+          additional_joins:         details[:additional_joins] || [],
           association_condition:    details[:association_condition]
         )
       when :polymorphic_belongs_to, "polymorphic_belongs_to"
