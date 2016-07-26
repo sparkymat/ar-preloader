@@ -151,7 +151,7 @@ module Ar
       end
     end
 
-    def self.preload_belongs_to(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil, additional_selects: [], additional_joins: [], group_by: nil)
+    def self.preload_belongs_to(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil, additional_selects: [], additional_joins: [])
       return if list.nil? || list.length == 0
 
       klass = list.first.class
@@ -178,8 +178,8 @@ module Ar
         query = query.join(j)
       end
 
-      unless group_by.nil?
-        query = query.group_by( group_by )
+      unless additional_selects.length == 0 && additional_joins.length == 0
+        query = query.group_by( association_table[association_klass.primary_key.to_sym] )
       end
 
       associated_objects = association_klass.find_by_sql(query.to_s).to_a
@@ -237,8 +237,7 @@ class Array
           inner_associations:       details[:associations],
           additional_selects:       details[:additional_selects] || [],
           additional_joins:         details[:additional_joins] || [],
-          association_condition:    details[:association_condition],
-          group_by:                 details[:group_by]
+          association_condition:    details[:association_condition]
         )
       when :polymorphic_belongs_to, "polymorphic_belongs_to"
         Ar::Preloader.preload_polymorphic_belongs_to(
