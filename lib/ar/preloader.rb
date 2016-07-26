@@ -148,7 +148,7 @@ module Ar
       end
     end
 
-    def self.preload_belongs_to(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil)
+    def self.preload_belongs_to(list:, name:, association_klass:, foreign_key:, inner_associations: nil, association_condition: nil, additional_selects: [], additional_joins: [])
       return if list.nil? || list.length == 0
 
       klass = list.first.class
@@ -156,16 +156,23 @@ module Ar
 
       return if list.map{ |e| e[foreign_key.to_sym] }.compact.length == 0
 
-      query = <<-EOS.squish
+      association_table = table(association_klass.table_name.to_sym)
 
-      SELECT
-        #{association_klass.table_name}.*
-      FROM #{association_klass.table_name}
-      WHERE #{association_klass.table_name}.#{association_klass.primary_key} IN (#{ list.map{ |e| e[foreign_key.to_sym] }.compact.map(&:to_s).join(", ") })#{ association_condition.present? ? "AND #{association_condition}" : ""}
+      selects = [association_table[:*]]
+      selects += additional_selects
 
-      EOS
+      condition = association_table[association_klass.primary_key.to_sym].in( list.map{ |e| e[foreign_key.to_sym] }.compact )
 
-      associated_objects = association_klass.find_by_sql(query).to_a
+      unless association_condition.nil?
+        condition = condition.and( association_condition )
+      end
+
+      query = select( *selects ).
+        from( association_table ).
+        where( condition )
+
+
+      associated_objects = association_klass.find_by_sql(query.to_s).to_a
       if inner_associations.present?
         associated_objects.prefetch(inner_associations)
       end
@@ -218,6 +225,8 @@ class Array
           association_klass:        details[:klass],
           foreign_key:              details[:foreign_key],
           inner_associations:       details[:associations],
+          additional_selects:       details[:additional_selects],
+          additional_joins:         details[:additional_joins],
           association_condition:    details[:association_condition]
         )
       when :polymorphic_belongs_to, "polymorphic_belongs_to"
