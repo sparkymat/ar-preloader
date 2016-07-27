@@ -27,7 +27,7 @@ module Ar
 
       join_objects = ActiveRecord::Base.connection.execute(join_query.to_s).to_a
 
-      association_table = table(association_klass.table_name.to_sym)
+      association_table  = association_klass.as_rusql_table
 
       condition = join_t[foreign_key.to_sym].in( list.map{ |e| e[klass.primary_key.to_sym] }.compact )
       if association_condition.present?
@@ -76,16 +76,22 @@ module Ar
         association_klass.send :attr_reader, reverse_association.to_sym
       end
 
-      query = <<-EOS.squish
+      association_table = association_klass.as_rusql_table
 
-      SELECT
-        #{association_klass.table_name}.*
-      FROM #{association_klass.table_name}
-      WHERE #{association_klass.table_name}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })#{ association_condition.present? ? "AND #{association_condition}" : ""}
+      condition = association_table[foreign_key.to_sym].in( list.map{ |e| e[klass.primary_key.to_sym] }.compact )
+      if association_condition.present?
+        condition = condition.and( association_condition )
+      end
 
-      EOS
+      query = select(
+        association_table[:*]
+      ).
+      from( association_table ).
+      where(
+        condition
+      )
 
-      associated_objects = association_klass.find_by_sql(query).to_a
+      associated_objects = association_klass.find_by_sql(query.to_s).to_a
       if inner_associations.present?
         associated_objects.prefetch(inner_associations)
       end
@@ -166,7 +172,7 @@ module Ar
 
       return if list.map{ |e| e[foreign_key.to_sym] }.compact.length == 0
 
-      association_table = table(association_klass.table_name.to_sym)
+      association_table = association_klass.as_rusql_table
 
       selects = [association_table[:*]]
       selects += additional_selects
