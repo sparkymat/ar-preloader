@@ -14,29 +14,36 @@ module Ar
       klass = list.first.class
       klass.send :attr_reader, name.to_sym
 
-      join_query = <<-EOS
+      join_t = table(join_table.to_sym)
 
-      SELECT
-        #{join_table}.#{foreign_key},
-        #{join_table}.#{association_foreign_key}
-      FROM #{join_table}
-      WHERE #{join_table}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })
+      join_query = select(
+        join_t[foreign_key.to_sym],
+        join_t[association_foreign_key.to_sym]
+      ).
+      from( join_t ).
+      where(
+        join_t[foreign_key.to_sym].in( list.map{ |e| e[klass.primary_key.to_sym] }.compact )
+      )
 
-      EOS
+      join_objects = ActiveRecord::Base.connection.execute(join_query.to_s).to_a
 
-      join_objects = ActiveRecord::Base.connection.execute(join_query).to_a
+      association_table = table(association_klass.table_name.to_sym)
 
-      query = <<-EOS
+      condition = join_t[foreign_key.to_sym].in( list.map{ |e| e[klass.primary_key.to_sym] }.compact )
+      if association_condition.present?
+        condition = condition.and( association_condition )
+      end
 
-      SELECT
-        #{association_klass.table_name}.*
-      FROM #{association_klass.table_name}
-      INNER JOIN #{join_table} ON #{join_table}.#{association_foreign_key} = #{association_klass.table_name}.#{association_klass.primary_key}
-      WHERE #{join_table}.#{foreign_key} IN (#{ list.map{ |e| e[klass.primary_key.to_sym] }.compact.map(&:to_s).join(", ") })#{ association_condition.present? ? " AND #{association_condition}" : "" }
+      query = select(
+        association_table[:*]
+      ).
+      from( association_table ).
+      inner_join( join_t, join_t[association_foreign_key.to_sym].equals(association_table[association_klass.primary_key.to_sym]) ).
+      where(
+        condition
+      )
 
-      EOS
-
-      associated_objects = association_klass.find_by_sql(query).to_a
+      associated_objects = association_klass.find_by_sql(query.to_s).to_a
 
       if inner_associations.present?
         associated_objects.prefetch(inner_associations)
@@ -215,6 +222,19 @@ module Ar
         )
       end
     end
+  end
+end
+
+class ActiveRecord::Base
+  def self.as_rusql_table
+    t = Rusql::Table.new
+    t.name = self.table_name.to_sym
+
+    t
+  end
+
+  def self.[](ind)
+    Rusql::Column.new( self.as_rusql_table, ind )
   end
 end
 
